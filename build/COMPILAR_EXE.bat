@@ -27,7 +27,7 @@ if errorlevel 1 (
 
 echo [2/3] Compilando (tarda 1-2 minutos)...
 python -m PyInstaller --onefile --noconsole --clean ^
-    --name "PianoAutoplayer" --distpath ..\dist ^
+    --name "PianoAutoplayer" --distpath ..\packages ^
     ..\src\autoplayer.py
 
 if errorlevel 1 (
@@ -44,7 +44,7 @@ del PianoAutoplayer.spec 2>nul
 echo.
 echo ============================================
 echo   LISTO
-echo   El ejecutable esta en:  dist\PianoAutoplayer.exe
+echo   El ejecutable esta en:  packages\PianoAutoplayer.exe
 echo   Podes moverlo a donde quieras, es autonomo.
 echo ============================================
 echo.

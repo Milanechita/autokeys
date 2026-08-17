@@ -14,6 +14,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
   pulsación, pausa por línea, humanización, transposición, cuenta atrás) a sus
   valores por defecto de fábrica, sin tocar el archivo de configuración
   guardado hasta que apretás "Guardar ajustes".
+### Cambiado
+- `build/COMPILAR_EXE.bat` ahora deja el `.exe` compilado en `packages/`
+  en vez de `dist/`, para tener el ejecutable listo separado del código fuente.
 
 ## [0.3.0] - 2026-08-17
 ### Añadido

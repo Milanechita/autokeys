@@ -29,7 +29,7 @@ Interfaz simple: pegás la partitura, ajustás el tempo y presionás F5.
 ## Generar el .exe
 
 Doble click en `build/COMPILAR_EXE.bat`. Instala PyInstaller solo, compila, y deja
-el ejecutable autónomo en `dist/PianoAutoplayer.exe`. Ese archivo funciona sin Python instalado.
+el ejecutable autónomo en `packages/PianoAutoplayer.exe`. Ese archivo funciona sin Python instalado.
 
 > Windows Defender puede marcar el .exe como falso positivo (típico de PyInstaller `--onefile`).
 > Agregá una excepción para la carpeta, o compilá sin `--onefile`.

@@ -1,6 +1,6 @@
 # PyInstaller
 build/build/
-dist/
+packages/
 *.spec
 
 # Config generada en runtime
