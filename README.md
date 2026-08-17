@@ -65,6 +65,11 @@ baja el tempo a un valor seguro (nunca lo sube: el formato no lleva un tempo
 **Restablecer ajustes** — botón que devuelve todos los sliders del panel a sus
 valores por defecto de fábrica.
 
+**Pausar si Roblox pierde el foco** — checkbox (activado por defecto). `SendInput`
+manda las teclas a la ventana en primer plano del sistema, sea cual sea; si Roblox
+no la tiene, se pausa solo en vez de seguir tocando "al aire" hacia otra ventana.
+Retoma cuando volvés a Roblox. No pisa la pausa manual (F7).
+
 ## Aviso
 
 Herramienta educativa. Algunos servidores de Roblox tienen detección de macros;

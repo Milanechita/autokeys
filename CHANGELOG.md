@@ -21,6 +21,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 - Las flechas ↑/↓ para subir/bajar el tempo solo funcionaban con la ventana de
   la app enfocada (eran un bind local de Tkinter). Ahora son hotkeys globales
   como F8/F9, así que también andan con el juego en primer plano.
+### Añadido
+- Pausa automática si Roblox deja de estar en primer plano: `SendInput` manda
+  las teclas a la ventana activa del sistema sea cual sea, así que si te vas a
+  otra ventana la partitura se seguía "tocando" al aire sin avisar. Ahora lo
+  detecta (mirando el proceso dueño de la ventana en primer plano) y pausa
+  solo, retomando cuando volvés a Roblox. Se puede desactivar con un check en
+  el panel; no pisa la pausa manual (F7).
 
 ## [0.3.0] - 2026-08-17
 ### Añadido
