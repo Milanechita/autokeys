@@ -17,6 +17,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 ### Cambiado
 - `build/COMPILAR_EXE.bat` ahora deja el `.exe` compilado en `packages/`
   en vez de `dist/`, para tener el ejecutable listo separado del código fuente.
+### Corregido
+- Las flechas ↑/↓ para subir/bajar el tempo solo funcionaban con la ventana de
+  la app enfocada (eran un bind local de Tkinter). Ahora son hotkeys globales
+  como F8/F9, así que también andan con el juego en primer plano.
 
 ## [0.3.0] - 2026-08-17
 ### Añadido

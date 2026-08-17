@@ -345,7 +345,8 @@ class Player:
 # ---------------------------------------------------------------------------
 
 VK = {0x74: "start", 0x75: "stop", 0x76: "pause",
-      0x77: "bpm_up", 0x78: "bpm_down"}   # F5 F6 F7 F8 F9
+      0x77: "bpm_up", 0x78: "bpm_down",   # F5 F6 F7 F8 F9
+      0x26: "bpm_up", 0x28: "bpm_down"}   # flecha arriba / abajo
 
 
 def hotkey_loop(app):
@@ -410,7 +411,7 @@ class App:
         head = ttk.Frame(m)
         head.pack(fill="x")
         ttk.Label(head, text="Piano Autoplayer", style="H.TLabel").pack(side="left")
-        ttk.Label(head, text="F5 tocar · F6 detener · F7 pausa · F8/F9 tempo ±",
+        ttk.Label(head, text="F5 tocar · F6 detener · F7 pausa · F8/F9 o ↑/↓ tempo ±",
                   style="Dim.TLabel").pack(side="right", pady=(6, 0))
 
         # --- barra de la partitura ---
@@ -524,8 +525,6 @@ class App:
             f"Windows rechazó el envío (error {err}). "
             "Probá ejecutar como administrador.")
         threading.Thread(target=hotkey_loop, args=(self,), daemon=True).start()
-        root.bind("<Up>", lambda e: self.bpm_up())
-        root.bind("<Down>", lambda e: self.bpm_down())
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     # -- config viva ---------------------------------------------------------
