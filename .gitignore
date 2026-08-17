@@ -1,0 +1,21 @@
+# PyInstaller
+build/build/
+dist/
+*.spec
+
+# Config generada en runtime
+autoplayer_config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# SO / editores
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
