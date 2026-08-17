@@ -233,6 +233,8 @@ class Player:
         self.on_progress = on_progress
         self.stop_flag = threading.Event()
         self.pause_flag = threading.Event()
+        self.auto_pause_flag = threading.Event()
+        self.started_playing = threading.Event()
         self.thread = None
         self.held = set()
 
@@ -245,6 +247,8 @@ class Player:
             return
         self.stop_flag.clear()
         self.pause_flag.clear()
+        self.auto_pause_flag.clear()
+        self.started_playing.clear()
         self.thread = threading.Thread(target=self._run, args=(events,), daemon=True)
         self.thread.start()
 
@@ -259,6 +263,14 @@ class Player:
             self.pause_flag.set()
             self._panic()
             self.on_status("Pausado — F7 para seguir")
+
+    def set_auto_pause(self, paused):
+        """Pausa/reanuda por perdida de foco de Roblox, sin pisar F7 (pausa manual)."""
+        if paused and not self.auto_pause_flag.is_set():
+            self.auto_pause_flag.set()
+            self._panic()
+        elif not paused and self.auto_pause_flag.is_set():
+            self.auto_pause_flag.clear()
 
     def _panic(self):
         if self.held:
@@ -301,6 +313,7 @@ class Player:
                 self.on_status(f"Cambia a Roblox... {i}")
                 time.sleep(1)
 
+            self.started_playing.set()
             self.on_status("Reproduciendo...")
             clock = time.perf_counter()
             total = max(1, len(events))
@@ -308,7 +321,8 @@ class Player:
             for idx, (kind, chars, dur) in enumerate(events):
                 if self.stop_flag.is_set():
                     break
-                while self.pause_flag.is_set() and not self.stop_flag.is_set():
+                while (self.pause_flag.is_set() or self.auto_pause_flag.is_set()) \
+                        and not self.stop_flag.is_set():
                     time.sleep(0.05)
                     clock = time.perf_counter()
 
@@ -336,6 +350,7 @@ class Player:
             if self.stop_flag.is_set():
                 self.on_progress(0, total)
         finally:
+            self.started_playing.clear()
             self._panic()
             winmm.timeEndPeriod(1)
 
@@ -345,7 +360,8 @@ class Player:
 # ---------------------------------------------------------------------------
 
 VK = {0x74: "start", 0x75: "stop", 0x76: "pause",
-      0x77: "bpm_up", 0x78: "bpm_down"}   # F5 F6 F7 F8 F9
+      0x77: "bpm_up", 0x78: "bpm_down",   # F5 F6 F7 F8 F9
+      0x26: "bpm_up", 0x28: "bpm_down"}   # flecha arriba / abajo
 
 
 def hotkey_loop(app):
@@ -357,6 +373,71 @@ def hotkey_loop(app):
                 app.root.after(0, getattr(app, action))
             prev[vk] = down
         time.sleep(0.03)
+
+
+# ---------------------------------------------------------------------------
+# Deteccion de foco: pausa sola si Roblox deja de ser la ventana activa.
+# SendInput manda las teclas a la ventana en primer plano, sea cual sea; si
+# Roblox no la tiene, las teclas se van a otro lado (o a ningun lado util) sin
+# avisar. Esto lo detecta y pausa en vez de seguir tocando "al aire".
+# ---------------------------------------------------------------------------
+
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+ROBLOX_PROCESS_HINT = "roblox"
+
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+kernel32.OpenProcess.restype = wintypes.HANDLE
+kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+kernel32.QueryFullProcessImageNameW.argtypes = [
+    wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+
+def foreground_process_name():
+    """Nombre (en minusculas) del .exe dueño de la ventana en primer plano, o ""."""
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return ""
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if not pid.value:
+        return ""
+    h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if not h:
+        return ""
+    try:
+        buf = ctypes.create_unicode_buffer(260)
+        size = wintypes.DWORD(260)
+        if not kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+            return ""
+        return os.path.basename(buf.value).lower()
+    finally:
+        kernel32.CloseHandle(h)
+
+
+def roblox_focused():
+    return ROBLOX_PROCESS_HINT in foreground_process_name()
+
+
+def focus_guard_loop(app):
+    while True:
+        time.sleep(0.2)
+        if not app.focus_guard_var.get():
+            continue
+        p = app.player
+        if not p.running or not p.started_playing.is_set() or p.pause_flag.is_set():
+            continue
+        focused = roblox_focused()
+        auto_paused = p.auto_pause_flag.is_set()
+        if focused and auto_paused:
+            p.set_auto_pause(False)
+            app.set_status("Reproduciendo...")
+        elif not focused and not auto_paused:
+            p.set_auto_pause(True)
+            app.set_status("Pausado: Roblox no está en primer plano")
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +484,8 @@ class App:
               foreground=[("readonly", FG)])
         s.configure("Horizontal.TProgressbar", background=ACC,
                     troughcolor=PANEL, borderwidth=0)
+        s.configure("TCheckbutton", background=BG, foreground=FG)
+        s.map("TCheckbutton", background=[("active", BG)])
 
         m = ttk.Frame(root, padding=16)
         m.pack(fill="both", expand=True)
@@ -410,7 +493,7 @@ class App:
         head = ttk.Frame(m)
         head.pack(fill="x")
         ttk.Label(head, text="Piano Autoplayer", style="H.TLabel").pack(side="left")
-        ttk.Label(head, text="F5 tocar · F6 detener · F7 pausa · F8/F9 tempo ±",
+        ttk.Label(head, text="F5 tocar · F6 detener · F7 pausa · F8/F9 o ↑/↓ tempo ±",
                   style="Dim.TLabel").pack(side="right", pady=(6, 0))
 
         # --- barra de la partitura ---
@@ -497,6 +580,11 @@ class App:
                           "nota.", style="Dim.TLabel", wraplength=700,
                   justify="left").pack(anchor="w", pady=(8, 0))
 
+        self.focus_guard_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(m, variable=self.focus_guard_var,
+                        text="Pausar automáticamente si Roblox no está en primer plano"
+                        ).pack(anchor="w", pady=(6, 0))
+
         # --- acciones ---
         act = ttk.Frame(m)
         act.pack(fill="x", pady=(14, 0))
@@ -524,8 +612,7 @@ class App:
             f"Windows rechazó el envío (error {err}). "
             "Probá ejecutar como administrador.")
         threading.Thread(target=hotkey_loop, args=(self,), daemon=True).start()
-        root.bind("<Up>", lambda e: self.bpm_up())
-        root.bind("<Down>", lambda e: self.bpm_down())
+        threading.Thread(target=focus_guard_loop, args=(self,), daemon=True).start()
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     # -- config viva ---------------------------------------------------------
@@ -537,8 +624,10 @@ class App:
 
     def save_cfg(self):
         try:
+            data = {k: v.get() for k, (v, _) in self.vars.items()}
+            data["focus_guard"] = self.focus_guard_var.get()
             with open(CFG_PATH, "w") as f:
-                json.dump({k: v.get() for k, (v, _) in self.vars.items()}, f)
+                json.dump(data, f)
             self.set_status("Ajustes guardados")
         except Exception as e:
             self.set_status(f"No se pudo guardar: {e}")
@@ -546,15 +635,19 @@ class App:
     def load_cfg(self):
         try:
             with open(CFG_PATH) as f:
-                for k, val in json.load(f).items():
-                    if k in self.vars:
-                        self.vars[k][0].set(val)
+                data = json.load(f)
+            for k, val in data.items():
+                if k in self.vars:
+                    self.vars[k][0].set(val)
+            if "focus_guard" in data:
+                self.focus_guard_var.set(bool(data["focus_guard"]))
         except Exception:
             pass
 
     def reset_settings(self):
         for key, default in self.defaults.items():
             self.vars[key][0].set(default)
+        self.focus_guard_var.set(True)
         self.set_status("Ajustes restablecidos a los valores por defecto")
 
     # -- biblioteca de canciones --------------------------------------------

@@ -12,7 +12,7 @@ Interfaz simple: pegás la partitura, ajustás el tempo y presionás F5.
 - Lee formato Virtual Piano: acordes `[abc]`, notas sueltas, notas pegadas que subdividen el beat, y símbolos con Shift (`$ % ^`...).
 - Envío de teclas por `SendInput` con **scancodes físicos** — funciona con Roblox y con cualquier layout de teclado (US, ES-LA, etc).
 - Panel de ajustes con sliders: tempo (modificable **en vivo**), pulsación, pausa por línea, humanización, transposición y cuenta atrás.
-- Hotkeys globales: **F5** tocar · **F6** detener · **F7** pausa · **F8/F9** subir/bajar tempo. Funcionan desde adentro del juego.
+- Hotkeys globales: **F5** tocar · **F6** detener · **F7** pausa · **F8/F9** o **↑/↓** subir/bajar tempo. Funcionan desde adentro del juego.
 - Biblioteca de canciones guardadas con nombre.
 - Guardado de configuración en `autoplayer_config.json`.
 - Contador de notas en tiempo real mientras editás la partitura.
@@ -64,6 +64,11 @@ baja el tempo a un valor seguro (nunca lo sube: el formato no lleva un tempo
 
 **Restablecer ajustes** — botón que devuelve todos los sliders del panel a sus
 valores por defecto de fábrica.
+
+**Pausar si Roblox pierde el foco** — checkbox (activado por defecto). `SendInput`
+manda las teclas a la ventana en primer plano del sistema, sea cual sea; si Roblox
+no la tiene, se pausa solo en vez de seguir tocando "al aire" hacia otra ventana.
+Retoma cuando volvés a Roblox. No pisa la pausa manual (F7).
 
 ## Aviso
 
