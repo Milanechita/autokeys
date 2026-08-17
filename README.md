@@ -12,7 +12,8 @@ Interfaz simple: pegás la partitura, ajustás el tempo y presionás F5.
 - Lee formato Virtual Piano: acordes `[abc]`, notas sueltas, notas pegadas que subdividen el beat, y símbolos con Shift (`$ % ^`...).
 - Envío de teclas por `SendInput` con **scancodes físicos** — funciona con Roblox y con cualquier layout de teclado (US, ES-LA, etc).
 - Panel de ajustes con sliders: tempo (modificable **en vivo**), pulsación, pausa por línea, humanización, transposición y cuenta atrás.
-- Hotkeys globales: **F5** tocar · **F6** detener · **F7** pausa. Funcionan desde adentro del juego.
+- Hotkeys globales: **F5** tocar · **F6** detener · **F7** pausa · **F8/F9** subir/bajar tempo. Funcionan desde adentro del juego.
+- Biblioteca de canciones guardadas con nombre.
 - Guardado de configuración en `autoplayer_config.json`.
 - Contador de notas en tiempo real mientras editás la partitura.
 
@@ -28,7 +29,7 @@ Interfaz simple: pegás la partitura, ajustás el tempo y presionás F5.
 ## Generar el .exe
 
 Doble click en `build/COMPILAR_EXE.bat`. Instala PyInstaller solo, compila, y deja
-el ejecutable autónomo en `dist/PianoAutoplayer.exe`. Ese archivo funciona sin Python instalado.
+el ejecutable autónomo en `packages/PianoAutoplayer.exe`. Ese archivo funciona sin Python instalado.
 
 > Windows Defender puede marcar el .exe como falso positivo (típico de PyInstaller `--onefile`).
 > Agregá una excepción para la carpeta, o compilá sin `--onefile`.
@@ -42,6 +43,8 @@ el ejecutable autónomo en `dist/PianoAutoplayer.exe`. Ese archivo funciona sin 
 | `u u u`         | tres notas, una por beat                     |
 | `uuuu`          | cuatro notas repartidas en un solo beat      |
 | `$` `%` `A`     | tecla con Shift                              |
+| `u---`          | nota alargada (cada `-` suma un beat)        |
+| `-` (suelto)    | pausa de un beat                             |
 | línea en blanco | pausa                                        |
 | `\|`            | separador visual, se ignora                  |
 
@@ -53,6 +56,14 @@ el ejecutable autónomo en `dist/PianoAutoplayer.exe`. Ese archivo funciona sin 
 - **Humanizar (ms)** — desincroniza cada nota al azar para que no suene robótico.
 - **Transponer** — mueve todo en semitonos; descarta notas fuera del rango.
 - **Cuenta atrás (s)** — margen para hacer alt-tab antes de arrancar.
+
+**Auto-Tempo** — botón junto al BPM que analiza la partitura pegada y, si la parte
+más rápida quedaría demasiado comprimida para que el juego registre cada tecla,
+baja el tempo a un valor seguro (nunca lo sube: el formato no lleva un tempo
+"real" para adivinar). También muestra la duración estimada de la canción.
+
+**Restablecer ajustes** — botón que devuelve todos los sliders del panel a sus
+valores por defecto de fábrica.
 
 ## Aviso
 

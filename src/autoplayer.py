@@ -15,7 +15,7 @@ import threading
 import time
 import tkinter as tk
 from ctypes import wintypes
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 # ---------------------------------------------------------------------------
 # Envio de teclas: SendInput con scancodes fisicos (lo que Roblox si registra)
@@ -37,18 +37,31 @@ class KEYBDINPUT(ctypes.Structure):
 
 
 class _U(ctypes.Union):
-    _fields_ = [("ki", KEYBDINPUT), ("pad", ctypes.c_ubyte * 24)]
+    # pad al tamaño del MOUSEINPUT real: sin esto INPUT queda en 32 bytes
+    # y en Windows 64-bit SendInput exige 40 -> rechaza el envío en silencio.
+    _fields_ = [("ki", KEYBDINPUT), ("pad", ctypes.c_ubyte * 32)]
 
 
 class INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("union", _U)]
 
 
+# Guarda de seguridad: si esto no da 40 en 64-bit, SendInput no funcionaría.
+assert ctypes.sizeof(INPUT) in (28, 40), \
+    f"Tamaño de INPUT inesperado: {ctypes.sizeof(INPUT)}"
+
+# Callback opcional para reportar fallos de envío a la interfaz.
+_send_error = {"cb": None}
+
+
 def _send(items):
     if not items:
         return
     arr = (INPUT * len(items))(*items)
-    user32.SendInput(len(items), ctypes.byref(arr), ctypes.sizeof(INPUT))
+    n = user32.SendInput(len(items), ctypes.byref(arr), ctypes.sizeof(INPUT))
+    if n != len(items) and _send_error["cb"]:
+        err = ctypes.get_last_error()
+        _send_error["cb"](err)
 
 
 def _mk(scan, up):
@@ -122,13 +135,14 @@ def transpose(ch, semis):
 # Parser de partitura
 # ---------------------------------------------------------------------------
 
-TOKEN_RE = re.compile(r"\[[^\]]*\]|\S")
+TOKEN_RE = re.compile(r"\[[^\]]*\]|[^\s-]|-")
 
 
 def parse_sheet(text):
     """
     [abc] = acorde | espacio = separa beats | abcd pegado = subdivide un beat
     salto de linea = pausa | '|' se ignora
+    '-' alarga la nota/grupo anterior un beat; '-' solo = pausa de un beat.
     Devuelve [("note", [chars], dur) | ("rest", None, dur)]
     """
     events = []
@@ -140,19 +154,72 @@ def parse_sheet(text):
             continue
         for group in line.split():
             toks = TOKEN_RE.findall(group)
-            if not toks:
+            # separo guiones colgados del final para alargar el grupo previo
+            trailing = 0
+            while toks and toks[-1] == "-":
+                trailing += 1
+                toks.pop()
+            playable = [t for t in toks if t != "-"]
+            leading_dashes = len(toks) - len(playable) - 0  # guiones sueltos internos
+
+            if not playable:
+                # grupo hecho solo de guiones -> pausa
+                events.append(("rest", None, float(len(toks) + trailing)))
                 continue
-            dur = 1.0 / len(toks)
-            for tok in toks:
+
+            dur = 1.0 / len(playable)
+            for i, tok in enumerate(playable):
                 if tok.startswith("["):
                     chars = [c for c in tok[1:-1] if resolve(c)]
                 else:
                     chars = [tok] if resolve(tok) else []
-                if chars:
-                    events.append(("note", chars, dur))
+                if not chars:
+                    continue
+                d = dur
+                if i == len(playable) - 1:
+                    d += trailing        # los guiones del final alargan la última
+                events.append(("note", chars, d))
         if li < len(lines) - 1:
             events.append(("rest", None, 0.0))   # marca de fin de linea
     return events
+
+
+# ---------------------------------------------------------------------------
+# Auto-Tempo: sugiere un BPM seguro segun la densidad de notas de la partitura
+# ---------------------------------------------------------------------------
+
+# Tiempo minimo confiable (ms) para que una nota individual sea registrada por
+# el juego: por debajo de esto, el hueco entre teclas sucesivas es tan chico
+# que SendInput puede terminar pisando eventos o el juego puede no llegar a
+# procesarlos. No hay forma de deducir el tempo "real" de la cancion a partir
+# del texto (el formato Virtual Piano no lleva BPM ni duracion real, solo
+# agrupamiento de notas), asi que esto es un techo de seguridad, no una
+# adivinanza del tempo original.
+MIN_NOTE_MS = 65.0
+
+
+def estimate_bpm(events, baseline):
+    """BPM sugerido: el actual (baseline), bajado si la subdivision mas
+    rapida de la partitura quedaria por debajo de MIN_NOTE_MS."""
+    durs = [d for kind, _chars, d in events if kind == "note" and d > 0]
+    if not durs:
+        return baseline
+    fastest = min(durs)
+    cap = (60000.0 * fastest) / MIN_NOTE_MS
+    return max(20.0, min(600.0, baseline, cap))
+
+
+def estimate_duration_seconds(events, bpm, line_gap):
+    beat = 60.0 / max(20.0, bpm)
+    total = 0.0
+    for kind, _chars, dur in events:
+        total += beat * (line_gap if (kind == "rest" and dur == 0.0) else dur)
+    return total
+
+
+def format_duration(seconds):
+    m, s = divmod(int(round(seconds)), 60)
+    return f"{m}:{s:02d}"
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +344,8 @@ class Player:
 # Hotkeys globales
 # ---------------------------------------------------------------------------
 
-VK = {0x74: "start", 0x75: "stop", 0x76: "pause"}   # F5 F6 F7
+VK = {0x74: "start", 0x75: "stop", 0x76: "pause",
+      0x77: "bpm_up", 0x78: "bpm_down"}   # F5 F6 F7 F8 F9
 
 
 def hotkey_loop(app):
@@ -301,10 +369,10 @@ DEMO = """u u u [uf] [uf] [ufx] [0ufx]
 6 [80] 3 [80] 3 $ % 6 [80] 3
 [6u] u [80u] u [3u] u [80u] u"""
 
-CFG_PATH = os.path.join(
-    os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__),
-    "autoplayer_config.json",
-)
+_BASE_DIR = os.path.dirname(
+    sys.executable if getattr(sys, "frozen", False) else __file__)
+CFG_PATH = os.path.join(_BASE_DIR, "autoplayer_config.json")
+SONGS_PATH = os.path.join(_BASE_DIR, "autoplayer_songs.json")
 
 
 class App:
@@ -329,6 +397,10 @@ class App:
         s.map("Go.TButton", background=[("active", "#9179ff")])
         s.configure("TScale", background=BG, troughcolor="#3a3a46")
         s.configure("TEntry", fieldbackground=PANEL, foreground=FG, borderwidth=0)
+        s.configure("TCombobox", fieldbackground=PANEL, background=PANEL,
+                    foreground=FG, borderwidth=0, arrowcolor=FG)
+        s.map("TCombobox", fieldbackground=[("readonly", PANEL)],
+              foreground=[("readonly", FG)])
         s.configure("Horizontal.TProgressbar", background=ACC,
                     troughcolor=PANEL, borderwidth=0)
 
@@ -338,7 +410,7 @@ class App:
         head = ttk.Frame(m)
         head.pack(fill="x")
         ttk.Label(head, text="Piano Autoplayer", style="H.TLabel").pack(side="left")
-        ttk.Label(head, text="F5 tocar   ·   F6 detener   ·   F7 pausa",
+        ttk.Label(head, text="F5 tocar · F6 detener · F7 pausa · F8/F9 tempo ±",
                   style="Dim.TLabel").pack(side="right", pady=(6, 0))
 
         # --- barra de la partitura ---
@@ -349,6 +421,20 @@ class App:
         ttk.Button(bar, text="Abrir .txt", command=self.load).pack(side="left")
         self.counter = ttk.Label(bar, text="0 notas", style="Dim.TLabel")
         self.counter.pack(side="right")
+
+        # --- biblioteca de canciones ---
+        lib = ttk.Frame(m)
+        lib.pack(fill="x", pady=(0, 6))
+        ttk.Label(lib, text="Biblioteca:", style="Dim.TLabel").pack(side="left")
+        self.song_var = tk.StringVar()
+        self.song_box = ttk.Combobox(lib, textvariable=self.song_var,
+                                     state="readonly", width=26)
+        self.song_box.pack(side="left", padx=6)
+        self.song_box.bind("<<ComboboxSelected>>", self.load_song)
+        ttk.Button(lib, text="Guardar canción",
+                   command=self.save_song).pack(side="left")
+        ttk.Button(lib, text="Borrar",
+                   command=self.delete_song).pack(side="left", padx=6)
 
         wrap = ttk.Frame(m)
         wrap.pack(fill="both", expand=True)
@@ -369,6 +455,8 @@ class App:
         grid.columnconfigure(1, weight=1)
 
         self.vars = {}
+        self.outs = {}
+        self.defaults = {}
         specs = [
             ("bpm",       "Tempo (BPM)",      20,  600, 180, 0),
             ("hold",      "Pulsación (ms)",   10,  400,  40, 0),
@@ -380,12 +468,27 @@ class App:
         for r, (key, label, lo, hi, default, dec) in enumerate(specs):
             var = tk.DoubleVar(value=default)
             self.vars[key] = (var, dec)
+            self.defaults[key] = default
             ttk.Label(grid, text=label).grid(row=r, column=0, sticky="w", pady=3)
             ttk.Scale(grid, from_=lo, to=hi, variable=var,
                       orient="horizontal").grid(row=r, column=1, sticky="ew", padx=10)
-            out = ttk.Label(grid, text=str(default), width=6, anchor="center",
-                            background=PANEL, padding=3)
-            out.grid(row=r, column=2)
+            if key == "bpm":
+                cell = ttk.Frame(grid)
+                cell.grid(row=r, column=2)
+                ttk.Button(cell, text="−", width=2,
+                           command=self.bpm_down).pack(side="left")
+                out = ttk.Label(cell, text=str(default), width=5, anchor="center",
+                                background=PANEL, padding=3)
+                out.pack(side="left", padx=3)
+                ttk.Button(cell, text="+", width=2,
+                           command=self.bpm_up).pack(side="left")
+                ttk.Button(cell, text="Auto-Tempo",
+                           command=self.auto_tempo).pack(side="left", padx=(8, 0))
+            else:
+                out = ttk.Label(grid, text=str(default), width=6, anchor="center",
+                                background=PANEL, padding=3)
+                out.grid(row=r, column=2)
+            self.outs[key] = out
             var.trace_add("write", lambda *_a, v=var, o=out, d=dec:
                           o.config(text=f"{v.get():.{d}f}" if d else f"{int(round(v.get()))}"))
 
@@ -403,6 +506,8 @@ class App:
         ttk.Button(act, text="Pausa", command=self.pause).pack(side="left")
         ttk.Button(act, text="Guardar ajustes",
                    command=self.save_cfg).pack(side="right")
+        ttk.Button(act, text="Restablecer ajustes",
+                   command=self.reset_settings).pack(side="right", padx=(0, 6))
 
         self.bar = ttk.Progressbar(m, maximum=100)
         self.bar.pack(fill="x", pady=(12, 6))
@@ -412,9 +517,15 @@ class App:
         self.cfg = {}
         self.sync_cfg()
         self.load_cfg()
+        self.refresh_songs()
         self.on_edit()
         self.player = Player(self.cfg, self.set_status, self.set_progress)
+        _send_error["cb"] = lambda err: self.set_status(
+            f"Windows rechazó el envío (error {err}). "
+            "Probá ejecutar como administrador.")
         threading.Thread(target=hotkey_loop, args=(self,), daemon=True).start()
+        root.bind("<Up>", lambda e: self.bpm_up())
+        root.bind("<Down>", lambda e: self.bpm_down())
         root.protocol("WM_DELETE_WINDOW", self.close)
 
     # -- config viva ---------------------------------------------------------
@@ -440,6 +551,74 @@ class App:
                         self.vars[k][0].set(val)
         except Exception:
             pass
+
+    def reset_settings(self):
+        for key, default in self.defaults.items():
+            self.vars[key][0].set(default)
+        self.set_status("Ajustes restablecidos a los valores por defecto")
+
+    # -- biblioteca de canciones --------------------------------------------
+    def _read_songs(self):
+        try:
+            with open(SONGS_PATH, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _write_songs(self, songs):
+        with open(SONGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(songs, f, ensure_ascii=False, indent=2)
+
+    def refresh_songs(self, select=None):
+        names = sorted(self._read_songs().keys())
+        self.song_box["values"] = names
+        if select and select in names:
+            self.song_var.set(select)
+        elif not names:
+            self.song_var.set("")
+
+    def save_song(self):
+        content = self.text.get("1.0", "end").strip()
+        if not content:
+            self.set_status("No hay nada para guardar")
+            return
+        name = simpledialog.askstring("Guardar canción",
+                                      "Nombre de la canción:", parent=self.root)
+        if not name:
+            return
+        name = name.strip()
+        songs = self._read_songs()
+        if name in songs and not messagebox.askyesno(
+                "Sobrescribir", f"«{name}» ya existe. ¿Reemplazar?"):
+            return
+        songs[name] = content
+        self._write_songs(songs)
+        self.refresh_songs(select=name)
+        self.set_status(f"Guardada: {name}")
+
+    def load_song(self, _=None):
+        name = self.song_var.get()
+        if not name:
+            return
+        content = self._read_songs().get(name)
+        if content is None:
+            return
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", content)
+        self.on_edit()
+        self.set_status(f"Cargada: {name}")
+
+    def delete_song(self):
+        name = self.song_var.get()
+        if not name:
+            return
+        if not messagebox.askyesno("Borrar", f"¿Borrar «{name}» de la biblioteca?"):
+            return
+        songs = self._read_songs()
+        songs.pop(name, None)
+        self._write_songs(songs)
+        self.refresh_songs()
+        self.set_status(f"Borrada: {name}")
 
     # -- partitura -----------------------------------------------------------
     def on_edit(self, _=None):
@@ -491,6 +670,36 @@ class App:
             messagebox.showwarning("Vacío", "No encontré notas válidas en la partitura.")
             return
         self.player.start(list(self.events))
+
+    def bump_bpm(self, delta):
+        var = self.vars["bpm"][0]
+        new = max(20, min(600, int(round(var.get())) + delta))
+        var.set(new)
+        self.set_status(f"Tempo: {new} BPM")
+
+    def bpm_up(self):
+        self.bump_bpm(5)
+
+    def bpm_down(self):
+        self.bump_bpm(-5)
+
+    def auto_tempo(self):
+        self.on_edit()
+        if not any(e[0] == "note" for e in self.events):
+            self.set_status("No hay notas para analizar")
+            return
+        current = self.vars["bpm"][0].get()
+        suggested = int(round(estimate_bpm(self.events, baseline=current)))
+        line_gap = self.vars["line_gap"][0].get()
+        dur = format_duration(
+            estimate_duration_seconds(self.events, suggested, line_gap))
+        if suggested < int(round(current)):
+            self.vars["bpm"][0].set(suggested)
+            self.set_status(f"Auto-Tempo: bajado a {suggested} BPM — la sección "
+                             f"más rápida lo necesita · dura ~{dur}")
+        else:
+            self.set_status(f"Auto-Tempo: {current:.0f} BPM ya es seguro para "
+                             f"esta partitura · dura ~{dur}")
 
     def stop(self):
         self.player.stop()
