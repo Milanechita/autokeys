@@ -2,6 +2,15 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 
+## [Sin publicar]
+### Añadido
+- Botón "Auto-Tempo" junto al slider de BPM: analiza la partitura pegada y, si la
+  sección más rápida quedaría por debajo de un umbral confiable para el envío de
+  teclas, baja el tempo automáticamente a un valor seguro. Nunca lo sube — el
+  formato Virtual Piano no lleva tempo real, así que no hay forma de "adivinar"
+  uno más rápido, solo de evitar uno demasiado denso para que el juego lo reciba
+  bien. Muestra también la duración estimada resultante.
+
 ## [0.3.0] - 2026-08-17
 ### Añadido
 - Control de tempo en vivo: botones +/- junto al BPM, flechas ↑/↓ con la ventana enfocada, y hotkeys globales F8 (subir) / F9 (bajar), en pasos de 5.

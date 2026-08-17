@@ -185,6 +185,44 @@ def parse_sheet(text):
 
 
 # ---------------------------------------------------------------------------
+# Auto-Tempo: sugiere un BPM seguro segun la densidad de notas de la partitura
+# ---------------------------------------------------------------------------
+
+# Tiempo minimo confiable (ms) para que una nota individual sea registrada por
+# el juego: por debajo de esto, el hueco entre teclas sucesivas es tan chico
+# que SendInput puede terminar pisando eventos o el juego puede no llegar a
+# procesarlos. No hay forma de deducir el tempo "real" de la cancion a partir
+# del texto (el formato Virtual Piano no lleva BPM ni duracion real, solo
+# agrupamiento de notas), asi que esto es un techo de seguridad, no una
+# adivinanza del tempo original.
+MIN_NOTE_MS = 65.0
+
+
+def estimate_bpm(events, baseline):
+    """BPM sugerido: el actual (baseline), bajado si la subdivision mas
+    rapida de la partitura quedaria por debajo de MIN_NOTE_MS."""
+    durs = [d for kind, _chars, d in events if kind == "note" and d > 0]
+    if not durs:
+        return baseline
+    fastest = min(durs)
+    cap = (60000.0 * fastest) / MIN_NOTE_MS
+    return max(20.0, min(600.0, baseline, cap))
+
+
+def estimate_duration_seconds(events, bpm, line_gap):
+    beat = 60.0 / max(20.0, bpm)
+    total = 0.0
+    for kind, _chars, dur in events:
+        total += beat * (line_gap if (kind == "rest" and dur == 0.0) else dur)
+    return total
+
+
+def format_duration(seconds):
+    m, s = divmod(int(round(seconds)), 60)
+    return f"{m}:{s:02d}"
+
+
+# ---------------------------------------------------------------------------
 # Motor de reproduccion
 # ---------------------------------------------------------------------------
 
@@ -442,6 +480,8 @@ class App:
                 out.pack(side="left", padx=3)
                 ttk.Button(cell, text="+", width=2,
                            command=self.bpm_up).pack(side="left")
+                ttk.Button(cell, text="Auto-Tempo",
+                           command=self.auto_tempo).pack(side="left", padx=(8, 0))
             else:
                 out = ttk.Label(grid, text=str(default), width=6, anchor="center",
                                 background=PANEL, padding=3)
@@ -633,6 +673,24 @@ class App:
 
     def bpm_down(self):
         self.bump_bpm(-5)
+
+    def auto_tempo(self):
+        self.on_edit()
+        if not any(e[0] == "note" for e in self.events):
+            self.set_status("No hay notas para analizar")
+            return
+        current = self.vars["bpm"][0].get()
+        suggested = int(round(estimate_bpm(self.events, baseline=current)))
+        line_gap = self.vars["line_gap"][0].get()
+        dur = format_duration(
+            estimate_duration_seconds(self.events, suggested, line_gap))
+        if suggested < int(round(current)):
+            self.vars["bpm"][0].set(suggested)
+            self.set_status(f"Auto-Tempo: bajado a {suggested} BPM — la sección "
+                             f"más rápida lo necesita · dura ~{dur}")
+        else:
+            self.set_status(f"Auto-Tempo: {current:.0f} BPM ya es seguro para "
+                             f"esta partitura · dura ~{dur}")
 
     def stop(self):
         self.player.stop()

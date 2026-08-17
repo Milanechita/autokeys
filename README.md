@@ -57,6 +57,11 @@ el ejecutable autónomo en `dist/PianoAutoplayer.exe`. Ese archivo funciona sin 
 - **Transponer** — mueve todo en semitonos; descarta notas fuera del rango.
 - **Cuenta atrás (s)** — margen para hacer alt-tab antes de arrancar.
 
+**Auto-Tempo** — botón junto al BPM que analiza la partitura pegada y, si la parte
+más rápida quedaría demasiado comprimida para que el juego registre cada tecla,
+baja el tempo a un valor seguro (nunca lo sube: el formato no lleva un tempo
+"real" para adivinar). También muestra la duración estimada de la canción.
+
 ## Aviso
 
 Herramienta educativa. Algunos servidores de Roblox tienen detección de macros;
