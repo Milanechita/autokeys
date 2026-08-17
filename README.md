@@ -62,6 +62,9 @@ más rápida quedaría demasiado comprimida para que el juego registre cada tecl
 baja el tempo a un valor seguro (nunca lo sube: el formato no lleva un tempo
 "real" para adivinar). También muestra la duración estimada de la canción.
 
+**Restablecer ajustes** — botón que devuelve todos los sliders del panel a sus
+valores por defecto de fábrica.
+
 ## Aviso
 
 Herramienta educativa. Algunos servidores de Roblox tienen detección de macros;

@@ -10,6 +10,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
   formato Virtual Piano no lleva tempo real, así que no hay forma de "adivinar"
   uno más rápido, solo de evitar uno demasiado denso para que el juego lo reciba
   bien. Muestra también la duración estimada resultante.
+- Botón "Restablecer ajustes": vuelve todos los sliders del panel (tempo,
+  pulsación, pausa por línea, humanización, transposición, cuenta atrás) a sus
+  valores por defecto de fábrica, sin tocar el archivo de configuración
+  guardado hasta que apretás "Guardar ajustes".
 
 ## [0.3.0] - 2026-08-17
 ### Añadido

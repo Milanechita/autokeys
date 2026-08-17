@@ -456,6 +456,7 @@ class App:
 
         self.vars = {}
         self.outs = {}
+        self.defaults = {}
         specs = [
             ("bpm",       "Tempo (BPM)",      20,  600, 180, 0),
             ("hold",      "Pulsación (ms)",   10,  400,  40, 0),
@@ -467,6 +468,7 @@ class App:
         for r, (key, label, lo, hi, default, dec) in enumerate(specs):
             var = tk.DoubleVar(value=default)
             self.vars[key] = (var, dec)
+            self.defaults[key] = default
             ttk.Label(grid, text=label).grid(row=r, column=0, sticky="w", pady=3)
             ttk.Scale(grid, from_=lo, to=hi, variable=var,
                       orient="horizontal").grid(row=r, column=1, sticky="ew", padx=10)
@@ -504,6 +506,8 @@ class App:
         ttk.Button(act, text="Pausa", command=self.pause).pack(side="left")
         ttk.Button(act, text="Guardar ajustes",
                    command=self.save_cfg).pack(side="right")
+        ttk.Button(act, text="Restablecer ajustes",
+                   command=self.reset_settings).pack(side="right", padx=(0, 6))
 
         self.bar = ttk.Progressbar(m, maximum=100)
         self.bar.pack(fill="x", pady=(12, 6))
@@ -547,6 +551,11 @@ class App:
                         self.vars[k][0].set(val)
         except Exception:
             pass
+
+    def reset_settings(self):
+        for key, default in self.defaults.items():
+            self.vars[key][0].set(default)
+        self.set_status("Ajustes restablecidos a los valores por defecto")
 
     # -- biblioteca de canciones --------------------------------------------
     def _read_songs(self):
